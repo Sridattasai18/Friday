@@ -1,5 +1,7 @@
 # F.R.I.D.A.Y (v1)
 
+**F.R.I.D.A.Y v1.0 — Early Stage**
+
 F.R.I.D.A.Y is a personal Node.js terminal app for managing daily tasks and habits with a modern Ink + React UI.
 
 This project is still in development, and this is **Version 1**.
@@ -84,6 +86,17 @@ Example markdown:
 - In development
 - Version: **1.0.0**
 - Focused on UI polish and command UX improvements
+
+## Where this is going
+
+F.R.I.D.A.Y starts as a daily task and habit tracker (v1), but the vision is bigger.
+I want this to evolve into a full local productivity agent powered by open-source AI
+that runs entirely on your machine, with no API costs and no credit limits.
+
+- **v1** -> daily task + habit manager (current)
+- **v2** -> smart suggestions based on your patterns
+- **v3** -> local AI agent (Ollama integration) that understands your schedule,
+  reminds you, and helps you plan your day - fully offline, fully free
 
 ---
 
