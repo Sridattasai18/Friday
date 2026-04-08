@@ -58,28 +58,17 @@ npm run demo
 
 ## Screenshots
 
-Add these images inside a `screenshots/` folder:
-
-- `screenshots/greeting.png` - startup greeting + FRIDAY banner
-- `screenshots/dashboard.png` - tasks and habits dashboard with streak bars
-- `screenshots/commands.png` - slash command suggestions while typing
-- `screenshots/exit.png` - exit confirmation screen
-
-Example markdown:
-
-```md
 ### Greeting screen
-![Greeting screen](screenshots/greeting.png)
+![Greeting screen](Greeting-Screen.png)
 
 ### Main dashboard
-![Dashboard](screenshots/dashboard.png)
+![Dashboard](Main-dashboards.png)
 
 ### Command suggestions
-![Command suggestions](screenshots/commands.png)
+![Command suggestions](Command-suggestions.png)
 
 ### Exit screen
-![Exit screen](screenshots/exit.png)
-```
+![Exit screen](Exit-screen.png)
 
 ## Project Status
 
