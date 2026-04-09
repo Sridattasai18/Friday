@@ -3,6 +3,8 @@ import { Box, Text, render, useInput } from 'ink';
 import cfonts from 'cfonts';
 import { loadTasks, saveTasks } from '../core/storage.js';
 import { addTask, markDone, markSkipped, clearDone, getStreak } from '../core/commands.js';
+import { getResponse } from '../core/personality.js';
+import { loadConfig, saveConfig } from '../core/config.js';
 
 const COLORS = {
   green: '#34d399',
@@ -14,19 +16,47 @@ const COLORS = {
   muted: '#9ca3af',
   bright: '#f9fafb',
 };
+const SECTION_DIVIDER = '─'.repeat(28);
+const statusIcon = {
+  done: { icon: '●', label: 'DONE', color: COLORS.dim },
+  skipped: { icon: '◌', label: 'SKIPPED', color: COLORS.amber },
+  pending: { icon: '○', label: 'PENDING', color: COLORS.green },
+};
 
-const COMMANDS = [
-  { value: '/add', label: '/add    - Add a new task', color: COLORS.green },
-  { value: '/habit', label: '/habit  - Add a new habit', color: COLORS.cyan },
-  { value: '/done', label: '/done   - Mark a task done', color: COLORS.rose },
-  { value: '/skip', label: '/skip   - Skip a habit today', color: COLORS.amber },
-  { value: '/list', label: '/list   - Show all tasks', color: COLORS.green },
-  { value: '/streak', label: '/streak - Show habit streaks', color: COLORS.amber },
-  { value: '/clear', label: '/clear  - Remove completed tasks', color: COLORS.dim },
-  { value: '/delete', label: '/delete - Delete a task or habit', color: COLORS.rose },
-  { value: '/help', label: '/help   - Show all commands', color: COLORS.violet },
+const QUICK_COMMANDS = [
+  { value: '/add', label: '/add    - Add a task or habit', color: COLORS.green },
+  { value: '/done', label: '/done   - Mark as done', color: COLORS.green },
+  { value: '/delete', label: '/delete - Delete an item', color: COLORS.rose },
+  { value: '/features', label: '/features - Open power commands', color: COLORS.amber },
+  { value: '/settings', label: '/settings - View/edit settings', color: COLORS.violet },
   { value: '/exit', label: '/exit   - Quit F.R.I.D.A.Y', color: COLORS.dim },
 ];
+
+const ADD_SUB_COMMANDS = [
+  { value: '/add task', label: '/task  - Add a new task', color: COLORS.green },
+  { value: '/add habit', label: '/habit - Add a new habit', color: COLORS.cyan },
+];
+
+const FEATURE_COMMANDS = [
+  { value: '/streak', label: '/streak - Show habit streaks', color: COLORS.amber },
+  { value: '/list', label: '/list   - Reload task list', color: COLORS.green },
+  { value: '/clear', label: '/clear  - Remove completed tasks', color: COLORS.dim },
+  { value: '/help', label: '/help   - Show all commands', color: COLORS.violet },
+];
+
+const COMMAND_CONTEXT = {
+  '/add': 'adding a task or habit...',
+  '/done': 'marking as done...',
+  '/delete': 'deleting an item...',
+  '/skip': 'skipping a habit...',
+  '/streak': 'checking streaks...',
+  '/clear': 'clearing completed tasks...',
+  '/list': 'loading your list...',
+  '/settings': 'opening settings...',
+  '/features': 'opening features...',
+  '/help': 'showing all commands...',
+  '/exit': 'shutting down...',
+};
 
 function normalizeToDateOnly(dateValue) {
   const date = new Date(dateValue);
@@ -65,43 +95,75 @@ function resetHabits(tasks) {
   return updatedTasks;
 }
 
-function formatHelp() {
+function formatHelpLines() {
   return [
-    '/add <title>',
-    '/habit <title>',
-    '/done <title>',
-    '/skip <title>',
-    '/list',
-    '/streak',
-    '/clear',
-    '/delete <id or title>',
-    '/help',
-    '/exit',
-  ].join('  |  ');
+    { cmd: '/add <title>', desc: 'add a task or habit', color: COLORS.green },
+    { cmd: '/done <title>', desc: 'mark a task or habit done', color: COLORS.green },
+    { cmd: '/delete <title>', desc: 'delete a task or habit', color: COLORS.rose },
+    { cmd: '/skip <title>', desc: 'skip a habit for today', color: COLORS.amber },
+    { cmd: '/streak', desc: 'show all habit streaks', color: COLORS.amber },
+    { cmd: '/list', desc: 'reload and show all tasks', color: COLORS.cyan },
+    { cmd: '/clear', desc: 'remove all completed tasks', color: COLORS.dim },
+    { cmd: '/settings <key>', desc: 'change name, theme or color', color: COLORS.violet },
+    { cmd: '/features', desc: 'open power commands panel', color: COLORS.cyan },
+    { cmd: '/help', desc: 'show this list', color: COLORS.violet },
+    { cmd: '/exit', desc: 'quit F.R.I.D.A.Y', color: COLORS.dim },
+  ];
 }
 
 function App() {
   const [screen, setScreen] = useState('greeting');
   const [tasks, setTasks] = useState([]);
+  const [config, setConfig] = useState(loadConfig());
   const [input, setInput] = useState('');
+  const [activeCommand, setActiveCommand] = useState('');
   const [echo, setEcho] = useState('Type /help to see available commands.');
+  const [echoTone, setEchoTone] = useState('info');
+  const [echoVisible, setEchoVisible] = useState(true);
+  const [echoAnimating, setEchoAnimating] = useState(false);
   const [echoIsCommand, setEchoIsCommand] = useState(false);
+  const [greetingDisplayed, setGreetingDisplayed] = useState('');
+  const [greetingDone, setGreetingDone] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [addSubMode, setAddSubMode] = useState(false);
+  const [taskSuggestions, setTaskSuggestions] = useState([]);
+  const [showTaskSuggestions, setShowTaskSuggestions] = useState(false);
+  const [taskSuggestionIndex, setTaskSuggestionIndex] = useState(0);
+  const [showFeaturesPanel, setShowFeaturesPanel] = useState(false);
+  const [featuresIndex, setFeaturesIndex] = useState(0);
+  const [showHelpPanel, setShowHelpPanel] = useState(false);
+  const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [showStreakPanel, setShowStreakPanel] = useState(false);
   const [cursorVisible, setCursorVisible] = useState(true);
   const [continueBlink, setContinueBlink] = useState(true);
 
   useEffect(() => {
+    const shouldBlinkCursor = screen === 'app'
+      && !showHelpPanel
+      && !showFeaturesPanel
+      && !showSettingsPanel
+      && !showSuggestions
+      && !showTaskSuggestions;
+
+    if (!shouldBlinkCursor) {
+      setCursorVisible(true);
+      return undefined;
+    }
+
     const timer = setInterval(() => setCursorVisible((v) => !v), 530);
     return () => clearInterval(timer);
-  }, []);
+  }, [screen, showHelpPanel, showFeaturesPanel, showSettingsPanel, showSuggestions, showTaskSuggestions]);
 
   useEffect(() => {
+    if (screen !== 'greeting') {
+      setContinueBlink(true);
+      return undefined;
+    }
     const timer = setInterval(() => setContinueBlink((v) => !v), 800);
     return () => clearInterval(timer);
-  }, []);
+  }, [screen]);
 
   useEffect(() => {
     if (screen !== 'exit') return undefined;
@@ -109,32 +171,101 @@ function App() {
     return () => clearTimeout(timer);
   }, [screen]);
 
+  const taskCount = tasks.filter((task) => task.type === 'task').length;
+  const pendingTaskCount = tasks.filter((task) => task.type === 'task' && task.status !== 'done').length;
   const dateText = useMemo(() => new Date().toLocaleString(), []);
   const greetingText = useMemo(() => {
     const hour = new Date().getHours();
-    if (hour < 12) return 'Good morning, Datta';
-    if (hour < 17) return 'Good afternoon, Datta';
-    return 'Good evening, Datta';
-  }, []);
-  const taskCount = tasks.filter((task) => task.type === 'task').length;
+    const timeOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
+    return getResponse('greeting', { name: config.name, pendingCount: pendingTaskCount, timeOfDay });
+  }, [pendingTaskCount, config.name]);
   const taskItems = tasks.filter((task) => task.type === 'task');
   const habitItems = tasks.filter((task) => task.type === 'habit');
+  const topStreak = habitItems.reduce((max, habit) => Math.max(max, habit.streak || 0), 0);
+  const echoColor = echoAnimating
+    ? COLORS.bright
+    : (echoTone === 'error' ? COLORS.rose : echoTone === 'success' ? COLORS.green : COLORS.muted);
+
+  const triggerEcho = (message, tone) => {
+    setEchoAnimating(true);
+    setEchoVisible(true);
+    setEcho(message);
+    setEchoTone(tone);
+    setTimeout(() => setEchoAnimating(false), 80);
+  };
+
+  useEffect(() => {
+    if (screen !== 'app') return undefined;
+
+    const hour = new Date().getHours();
+    const timeOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
+    const full = getResponse('greeting', { name: config.name, pendingCount: pendingTaskCount, timeOfDay });
+    let i = 0;
+
+    setGreetingDisplayed('');
+    setGreetingDone(false);
+
+    const interval = setInterval(() => {
+      i += 1;
+      setGreetingDisplayed(full.slice(0, i));
+      if (i >= full.length) {
+        clearInterval(interval);
+        setGreetingDone(true);
+      }
+    }, 38);
+
+    return () => clearInterval(interval);
+  }, [screen, pendingTaskCount, config.name]);
+
+  const updateTaskSuggestions = (currentInput) => {
+    const trimmed = currentInput.trimStart();
+    const firstSpaceIdx = trimmed.indexOf(' ');
+    const command = firstSpaceIdx === -1 ? trimmed : trimmed.slice(0, firstSpaceIdx);
+    const hasArgPrefix = firstSpaceIdx !== -1;
+    const typedArg = hasArgPrefix ? trimmed.slice(firstSpaceIdx + 1) : '';
+    const eligible = command === '/done' || command === '/skip' || command === '/delete';
+
+    if (eligible && hasArgPrefix && typedArg.trim().length > 0) {
+      const normalized = typedArg.trim().toLowerCase();
+      const matches = tasks
+        .filter((t) => t.title.toLowerCase().includes(normalized))
+        .slice(0, 5);
+      setTaskSuggestions(matches);
+      setShowTaskSuggestions(matches.length > 0);
+      setTaskSuggestionIndex(0);
+      return;
+    }
+
+    setShowTaskSuggestions(false);
+    setTaskSuggestions([]);
+    setTaskSuggestionIndex(0);
+  };
 
   const updateSuggestions = (nextInput) => {
     if (!nextInput.startsWith('/')) {
       setShowSuggestions(false);
       setSuggestions([]);
       setSelectedIndex(0);
+      updateTaskSuggestions(nextInput);
       return;
     }
 
-    const filtered = nextInput === '/'
-      ? COMMANDS
-      : COMMANDS.filter((cmd) => cmd.value.startsWith(nextInput));
+    let filtered = [];
+    if (addSubMode) {
+      filtered = ADD_SUB_COMMANDS.filter((cmd) => cmd.value.startsWith(nextInput));
+    } else if (nextInput === '/') {
+      filtered = QUICK_COMMANDS;
+    } else if (nextInput.startsWith('/add ')) {
+      updateTaskSuggestions(nextInput);
+      return;
+    } else {
+      filtered = QUICK_COMMANDS.filter((cmd) => cmd.value.startsWith(nextInput));
+    }
 
     setSuggestions(filtered);
     setShowSuggestions(filtered.length > 0);
     setSelectedIndex(0);
+    updateTaskSuggestions(nextInput);
   };
 
   const refreshFromDisk = (nextEcho) => {
@@ -172,93 +303,84 @@ function App() {
     const command = firstSpaceIdx === -1 ? trimmed : trimmed.slice(0, firstSpaceIdx);
     const arg = firstSpaceIdx === -1 ? '' : trimmed.slice(firstSpaceIdx + 1).trim();
     setShowStreakPanel(false);
+    setShowFeaturesPanel(false);
 
     if (command === '/add') {
-      if (!arg) {
-        setEcho('Please provide a title. Example: /add Read 10 pages');
-        return;
-      }
-
-      let title = arg;
       let type = 'task';
-      if (/\s+habit$/i.test(arg)) {
+      let title = arg;
+
+      if (arg.startsWith('task ')) {
+        type = 'task';
+        title = arg.slice(5).trim();
+      } else if (arg.startsWith('habit ')) {
+        type = 'habit';
+        title = arg.slice(6).trim();
+      } else if (/\s+habit$/i.test(arg)) {
         type = 'habit';
         title = arg.replace(/\s+habit$/i, '').trim();
       }
+
       if (!title) {
-        setEcho('Please provide a title before "habit".');
+        triggerEcho('What should I call it? Example: /add task Read 10 pages', 'error');
         return;
       }
 
       const updated = await addTask(tasks, title, type);
       saveTasks(updated);
-      const refreshed = loadTasks();
-      setTasks(refreshed);
-      setEcho('Task added');
-      setEchoIsCommand(false);
-      return;
-    }
-
-    if (command === '/habit') {
-      if (!arg) {
-        setEcho('Please provide a title. Example: /habit Drink water');
-        setEchoIsCommand(false);
-        return;
-      }
-
-      const updated = await addTask(tasks, arg, 'habit');
-      saveTasks(updated);
-      const refreshed = loadTasks();
-      setTasks(refreshed);
-      setEcho('Habit added');
-      setEchoIsCommand(false);
+      setTasks(loadTasks());
+      triggerEcho(getResponse(type === 'habit' ? 'habitAdded' : 'taskAdded'), 'success');
       return;
     }
 
     if (command === '/done') {
       if (!arg) {
-        setEcho('Please provide an id. Example: /done <id>');
+        triggerEcho('Please provide an id. Example: /done <id>', 'error');
         return;
       }
       const resolvedId = resolveTaskIdFromArg(arg);
       if (!resolvedId) {
-        setEcho('No matching task found');
+        triggerEcho('No matching task found', 'error');
         return;
       }
       const task = tasks.find((item) => item.id === resolvedId);
       if (!task) {
-        setEcho('No matching task found');
+        triggerEcho('No matching task found', 'error');
         return;
       }
       const updated = await markDone(tasks, task.id);
       saveTasks(updated);
       const refreshed = loadTasks();
       setTasks(refreshed);
-      setEcho('Marked done');
+      if (task.type === 'habit') {
+        const updatedHabit = updated.find((item) => item.id === task.id);
+        triggerEcho(getResponse('habitDone', { streak: updatedHabit?.streak || 0 }), 'success');
+      } else {
+        triggerEcho(getResponse('taskDone'), 'success');
+      }
       setEchoIsCommand(false);
       return;
     }
 
     if (command === '/skip') {
       if (!arg) {
-        setEcho('Please provide an id. Example: /skip <id>');
+        triggerEcho('Please provide an id. Example: /skip <id>', 'error');
         return;
       }
       const resolvedId = resolveTaskIdFromArg(arg);
       if (!resolvedId) {
-        setEcho('No matching task found');
+        triggerEcho('No matching task found', 'error');
         return;
       }
       const task = tasks.find((item) => item.id === resolvedId);
       if (!task) {
-        setEcho('No matching task found');
+        triggerEcho('No matching task found', 'error');
         return;
       }
       const updated = await markSkipped(tasks, task.id);
       saveTasks(updated);
       const refreshed = loadTasks();
       setTasks(refreshed);
-      setEcho('Skipped');
+      triggerEcho(getResponse('skipped'), 'success');
       setEchoIsCommand(false);
       return;
     }
@@ -266,21 +388,28 @@ function App() {
     if (command === '/list') {
       const refreshed = loadTasks();
       setTasks(refreshed);
-      setEcho(`Loaded ${refreshed.length} tasks`);
+      triggerEcho(`Loaded ${refreshed.length} tasks`, 'info');
       setEchoIsCommand(false);
+      return;
+    }
+
+    if (command === '/features') {
+      setShowFeaturesPanel(true);
+      setFeaturesIndex(0);
+      triggerEcho('Select a feature to run.', 'info');
       return;
     }
 
     if (command === '/streak') {
       const habits = tasks.filter((task) => task.type === 'habit');
       if (habits.length === 0) {
-        setEcho('No habits yet.');
+        triggerEcho('No habits yet.', 'error');
         return;
       }
       const summary = habits
         .map((habit) => `${habit.title}: ${getStreak(tasks, habit.id)}d`)
         .join(' | ');
-      setEcho(summary);
+      triggerEcho(summary, 'info');
       setEchoIsCommand(false);
       setShowStreakPanel(true);
       return;
@@ -291,14 +420,14 @@ function App() {
       saveTasks(updated);
       const refreshed = loadTasks();
       setTasks(refreshed);
-      setEcho('Cleared done tasks');
+      triggerEcho(getResponse('cleared'), 'success');
       setEchoIsCommand(false);
       return;
     }
 
     if (command === '/delete') {
       if (!arg) {
-        setEcho('Please provide an id or title. Example: /delete drink water');
+        triggerEcho('Please provide an id or title. Example: /delete drink water', 'error');
         return;
       }
 
@@ -314,21 +443,53 @@ function App() {
 
       const deletedCount = tasks.length - updated.length;
       if (deletedCount === 0) {
-        setEcho('No matching task found');
+        triggerEcho('No matching task found', 'error');
         return;
       }
 
       saveTasks(updated);
       const refreshed = loadTasks();
       setTasks(refreshed);
-      setEcho(`Deleted ${deletedCount} item(s)`);
+      triggerEcho(getResponse('deleted'), 'success');
       setEchoIsCommand(false);
       return;
     }
 
     if (command === '/help') {
-      setEcho(formatHelp());
-      setEchoIsCommand(false);
+      setShowHelpPanel(true);
+      triggerEcho("Here's everything you can do.", 'info');
+      return;
+    }
+
+    if (command === '/settings') {
+      if (!arg) {
+        setShowSettingsPanel(true);
+        triggerEcho('Use /settings <key> <value> to edit.', 'info');
+        return;
+      }
+      const parts = arg.split(' ');
+      const key = parts[0];
+      const value = parts.slice(1).join(' ').trim();
+
+      if (key === 'name') {
+        const nextConfig = { ...loadConfig(), name: value };
+        saveConfig(nextConfig);
+        setConfig(nextConfig);
+        triggerEcho(`Name set to ${value}.`, 'success');
+        return;
+      }
+      if (key === 'theme') {
+        if (!['dark', 'light'].includes(value)) {
+          triggerEcho('Theme must be dark or light.', 'error');
+          return;
+        }
+        const nextConfig = { ...loadConfig(), theme: value };
+        saveConfig(nextConfig);
+        setConfig(nextConfig);
+        triggerEcho(`Theme set to ${value}. Restart to apply.`, 'success');
+        return;
+      }
+      triggerEcho(`Unknown setting: ${key}. Try name or theme.`, 'error');
       return;
     }
 
@@ -338,7 +499,7 @@ function App() {
       return;
     }
 
-    setEcho(`Unknown command: ${command}. Type /help`);
+    triggerEcho(getResponse('unknownCommand'), 'error');
     setEchoIsCommand(false);
   };
 
@@ -355,6 +516,34 @@ function App() {
 
     if (screen === 'exit') return;
 
+    if (showFeaturesPanel) {
+      if (key.upArrow) {
+        setFeaturesIndex((prev) => (prev - 1 + FEATURE_COMMANDS.length) % FEATURE_COMMANDS.length);
+        return;
+      }
+      if (key.downArrow) {
+        setFeaturesIndex((prev) => (prev + 1) % FEATURE_COMMANDS.length);
+        return;
+      }
+      if (key.return) {
+        const selectedFeature = FEATURE_COMMANDS[featuresIndex];
+        setShowFeaturesPanel(false);
+        executeCommand(selectedFeature.value);
+        return;
+      }
+      if (key.escape || key.backspace || key.delete) {
+        setShowFeaturesPanel(false);
+        return;
+      }
+    }
+
+    if (showHelpPanel) {
+      if (key.return || key.escape) {
+        setShowHelpPanel(false);
+        return;
+      }
+    }
+
     if (key.ctrl && keyInput === 'c') {
       process.exit(0);
     }
@@ -362,7 +551,20 @@ function App() {
     if (key.backspace || key.delete) {
       const nextInput = input.slice(0, -1);
       setInput(nextInput);
+      if (addSubMode && nextInput.length <= '/add'.length) {
+        setAddSubMode(false);
+      }
       updateSuggestions(nextInput);
+      return;
+    }
+
+    if (showTaskSuggestions && taskSuggestions.length > 0 && key.upArrow) {
+      setTaskSuggestionIndex((prev) => (prev - 1 + taskSuggestions.length) % taskSuggestions.length);
+      return;
+    }
+
+    if (showTaskSuggestions && taskSuggestions.length > 0 && key.downArrow) {
+      setTaskSuggestionIndex((prev) => (prev + 1) % taskSuggestions.length);
       return;
     }
 
@@ -377,19 +579,54 @@ function App() {
     }
 
     if (key.tab) {
+      if (showTaskSuggestions && taskSuggestions.length > 0) {
+        const trimmed = input.trim();
+        const firstSpaceIdx = trimmed.indexOf(' ');
+        const command = firstSpaceIdx === -1 ? trimmed : trimmed.slice(0, firstSpaceIdx);
+        const selectedTask = taskSuggestions[taskSuggestionIndex];
+        if (selectedTask) {
+          const completedInput = `${command} ${selectedTask.title}`;
+          setInput(completedInput);
+          setShowTaskSuggestions(false);
+          setTaskSuggestions([]);
+          setTaskSuggestionIndex(0);
+          updateSuggestions(completedInput);
+          return;
+        }
+      }
       autocompleteFromSelection();
       return;
     }
 
     if (key.return) {
+      setActiveCommand('');
       const submitted = input.trim();
       if (submitted.length > 0) {
         if (showSuggestions && selectedIndex >= 0 && suggestions[selectedIndex]) {
           const slug = suggestions[selectedIndex].value;
-          const needsArg = slug === '/add' || slug === '/habit' || slug === '/done' || slug === '/skip' || slug === '/delete';
+          if (slug === '/add') {
+            setInput('/add ');
+            setAddSubMode(true);
+            setSuggestions(ADD_SUB_COMMANDS);
+            setShowSuggestions(true);
+            setSelectedIndex(0);
+            return;
+          }
+
+          if (slug === '/add task' || slug === '/add habit') {
+            setInput(`${slug} `);
+            setAddSubMode(false);
+            setShowSuggestions(false);
+            setSuggestions([]);
+            setSelectedIndex(0);
+            return;
+          }
+
+          const needsArg = slug === '/done' || slug === '/skip' || slug === '/delete';
 
           if (needsArg) {
             setInput(`${slug} `);
+            setAddSubMode(false);
             setShowSuggestions(false);
             setSuggestions([]);
             setSelectedIndex(0);
@@ -405,14 +642,17 @@ function App() {
         }
 
         if (submitted.startsWith('/')) {
+          setAddSubMode(false);
           executeCommand(submitted);
         } else {
           setEcho(`echo: ${submitted}`);
+          setEchoTone('info');
           setEchoIsCommand(true);
         }
       }
 
       setInput('');
+      setAddSubMode(false);
       setShowSuggestions(false);
       setSuggestions([]);
       setSelectedIndex(0);
@@ -423,15 +663,25 @@ function App() {
       const nextInput = input + keyInput;
       setInput(nextInput);
       updateSuggestions(nextInput);
+      const detectedCommand = Object.keys(COMMAND_CONTEXT).find(cmd =>
+        nextInput.startsWith(cmd)
+      );
+      setActiveCommand(detectedCommand ? `▸ ${detectedCommand} — ${COMMAND_CONTEXT[detectedCommand]}` : '');
     }
   });
 
   return (
     <Box flexDirection="column">
       {screen === 'greeting' ? (
-        <Box borderStyle="round" borderColor={COLORS.cyan} flexDirection="column">
+        <Box borderStyle="round" borderColor={COLORS.amber} flexDirection="column" paddingX={1}>
           <Text color={COLORS.bright}>  {greetingText}  </Text>
           <Text color={COLORS.muted}>  Your tasks. Your habits. Your day.  </Text>
+          <Text color={COLORS.dim}>  {SECTION_DIVIDER}  </Text>
+          <Box gap={2}>
+            <Text color={COLORS.dim}>Tasks: <Text color={COLORS.green}>{pendingTaskCount}</Text></Text>
+            <Text color={COLORS.dim}>Habits: <Text color={COLORS.cyan}>{habitItems.length}</Text></Text>
+            <Text color={COLORS.dim}>Top streak: <Text color={COLORS.amber}>{topStreak}d</Text></Text>
+          </Box>
           <Text> </Text>
           <Text color={COLORS.amber}>
             {continueBlink ? '  Press ENTER to continue  ' : '                           '}
@@ -448,6 +698,7 @@ function App() {
 
       {screen === 'app' ? (
         <>
+      <Text color={COLORS.muted}>{greetingDisplayed}{!greetingDone ? '▌' : ''}</Text>
       <Box>
         <Text color={COLORS.dim}>{dateText}</Text>
         <Text color={COLORS.dim}>  ·  </Text>
@@ -457,15 +708,19 @@ function App() {
       <Box />
 
       <Box flexDirection="column">
-        <Text color={COLORS.green}>Tasks</Text>
-        <Text color={COLORS.dim}>────────────</Text>
+        <Box>
+          <Text color={COLORS.amber}>▍</Text>
+          <Text color={COLORS.green}> TASKS </Text>
+          <Text color={COLORS.dim}>({taskItems.length})</Text>
+        </Box>
+        <Text color={COLORS.dim}>{SECTION_DIVIDER}</Text>
         {taskItems.length === 0 ? (
           <Text color={COLORS.dim}>No tasks added yet.</Text>
         ) : (
           taskItems.map((task) => (
-            <Box key={task.id}>
-              <Text color={task.status === 'done' ? COLORS.rose : COLORS.green}>
-                {task.status === 'done' ? '[✓] ' : task.status === 'skipped' ? '[~] ' : '[·] '}
+            <Box key={task.id} marginLeft={1}>
+              <Text color={statusIcon[task.status] ? statusIcon[task.status].color : COLORS.green}>
+                {statusIcon[task.status] ? `${statusIcon[task.status].icon} ${statusIcon[task.status].label} ` : '○ PENDING '}
               </Text>
               {task.status === 'done' ? (
                 <Text color={COLORS.dim} strikethrough>
@@ -484,25 +739,31 @@ function App() {
       <Box />
 
       <Box flexDirection="column">
-        <Text color={COLORS.cyan}>Habits</Text>
-        <Text color={COLORS.dim}>────────────</Text>
+        <Box>
+          <Text color={COLORS.cyan}>▍</Text>
+          <Text color={COLORS.cyan}> HABITS </Text>
+          <Text color={COLORS.dim}>({habitItems.length})</Text>
+        </Box>
+        <Text color={COLORS.dim}>{SECTION_DIVIDER}</Text>
         {habitItems.length === 0 ? (
           <Text color={COLORS.dim}>No habits added yet.</Text>
         ) : (
           habitItems.map((habit) => {
             const streak = habit.streak || 0;
-            const filled = Math.min(Math.max(streak, 0), 7);
-            const bar = `${'█'.repeat(filled)}${'░'.repeat(7 - filled)}`;
+            const filled = Math.min(Math.max(streak, 0), 10);
+            const barColor = filled >= 5 ? COLORS.green : COLORS.amber;
             return (
-              <Box key={habit.id}>
-                <Text color={COLORS.cyan}>[·] </Text>
+              <Box key={habit.id} marginLeft={1}>
+                <Text color={statusIcon[habit.status] ? statusIcon[habit.status].color : COLORS.cyan}>
+                  {statusIcon[habit.status] ? `${statusIcon[habit.status].icon} ${statusIcon[habit.status].label} ` : '○ PENDING '}
+                </Text>
                 <Text color={habit.status === 'pending' ? COLORS.cyan : COLORS.dim}>{habit.title}</Text>
                 <Text color={COLORS.dim}>  </Text>
-                <Text color={COLORS.amber}>{streak}d</Text>
+                <Text color={barColor}>{streak}d</Text>
                 <Text color={COLORS.dim}>  </Text>
-                <Text color={COLORS.amber}>{'█'.repeat(filled)}</Text>
-                <Text color={COLORS.dim}>{'░'.repeat(7 - filled)}</Text>
-                {showStreakPanel ? <Text color={COLORS.dim}>  ({bar})</Text> : null}
+                <Text color={barColor}>{'█'.repeat(filled)}</Text>
+                <Text color={COLORS.dim}>{'░'.repeat(10 - filled)}</Text>
+                {showStreakPanel ? <Text color={COLORS.dim}>  ({streak}d)</Text> : null}
               </Box>
             );
           })
@@ -511,7 +772,44 @@ function App() {
 
       <Box />
 
-      {echo ? <Text color={echoIsCommand ? COLORS.amber : COLORS.muted}>{echo}</Text> : null}
+      <Text color={COLORS.dim}>{SECTION_DIVIDER}</Text>
+      {showHelpPanel ? (
+        <Box flexDirection="column" borderStyle="single" borderColor={COLORS.dim} paddingX={1}>
+          <Text color={COLORS.violet}>  ▸ HELP</Text>
+          <Text color={COLORS.dim}>  {'─'.repeat(44)}</Text>
+          {formatHelpLines().map((line) => (
+            <Box key={line.cmd}>
+              <Text color={line.color}>  {line.cmd.padEnd(22)}</Text>
+              <Text color={COLORS.dim}>  {line.desc}</Text>
+            </Box>
+          ))}
+          <Text color={COLORS.dim}>  {'─'.repeat(44)}</Text>
+          <Text color={COLORS.dim}>  Press ENTER or ESC to close</Text>
+        </Box>
+      ) : null}
+      {showFeaturesPanel ? (
+        <Box flexDirection="column" borderStyle="single" borderColor={COLORS.dim} paddingX={1}>
+          <Text color={COLORS.amber}>  ▸ FEATURES</Text>
+          {FEATURE_COMMANDS.map((item, idx) => {
+            const selected = idx === featuresIndex;
+            return (
+              <Text key={item.value} color={selected ? item.color : COLORS.dim} bold={selected}>
+                {selected ? '› ' : '  '}
+                {item.label}
+              </Text>
+            );
+          })}
+        </Box>
+      ) : null}
+      {showSettingsPanel ? (
+        <Box flexDirection="column" borderStyle="single" borderColor={COLORS.dim} paddingX={1}>
+          <Text color={COLORS.violet}>  ▸ SETTINGS</Text>
+          <Text color={COLORS.dim}>  name    <Text color={COLORS.bright}>{config.name}</Text></Text>
+          <Text color={COLORS.dim}>  theme   <Text color={COLORS.bright}>{config.theme}</Text></Text>
+          <Text color={COLORS.dim}>  → /settings name Datta  |  /settings theme dark</Text>
+        </Box>
+      ) : null}
+      <Text color={echoIsCommand ? COLORS.amber : echoColor}>→ {echoVisible ? (echo || ' ') : ' '}</Text>
 
       {showSuggestions ? (
         <Box flexDirection="column" borderStyle="single" borderColor={COLORS.dim} paddingX={1}>
@@ -525,8 +823,26 @@ function App() {
             );
           })}
         </Box>
-      ) : null}
+      ) : <Box height={1} />}
 
+      {showTaskSuggestions ? (
+        <Box flexDirection="column" borderStyle="single" borderColor={COLORS.dim} paddingX={1}>
+          {taskSuggestions.map((item, idx) => {
+            const selected = idx === taskSuggestionIndex;
+            return (
+              <Text key={item.id} color={selected ? COLORS.amber : COLORS.dim}>
+                {selected ? '› ' : '  '}
+                {item.title}
+                <Text color={COLORS.dim}>  [{item.type}]</Text>
+              </Text>
+            );
+          })}
+        </Box>
+      ) : <Box height={1} />}
+
+      {activeCommand ? (
+        <Text color={COLORS.dim}>{activeCommand}</Text>
+      ) : null}
       <Box>
         {/*
           No modal/overlay focus mode exists yet, so input remains focused.
@@ -539,7 +855,7 @@ function App() {
           const caret = displayText.slice(-1);
           return (
             <>
-              <Text color={COLORS.green}>› </Text>
+              <Text color={COLORS.amber}>❯ </Text>
               <Text color={COLORS.bright}>{baseText}</Text>
               <Text color={COLORS.amber}>{caret}</Text>
             </>

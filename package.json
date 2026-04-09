@@ -1,8 +1,11 @@
 {
-  "name": "f.r.i.d.a.y",
+  "name": "friday-cli",
   "version": "1.0.0",
   "type": "module",
   "main": "src/app.jsx",
+  "bin": {
+    "friday": "./bin/friday.js"
+  },
   "scripts": {
     "start": "tsx src/app.jsx",
     "dev": "tsx src/app.jsx",
