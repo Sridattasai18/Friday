@@ -1,10 +1,31 @@
 {
-  "name": "friday-cli",
+  "name": "@sridattasai_v/friday",
   "version": "1.0.0",
+  "description": "F.R.I.D.A.Y — terminal productivity CLI. Tasks, habits, streaks.",
   "type": "module",
-  "main": "src/app.jsx",
   "bin": {
     "friday": "./bin/friday.js"
+  },
+  "files": [
+    "bin/",
+    "src/app.jsx",
+    "src/Onboarding.jsx",
+    "core/"
+  ],
+  "keywords": [
+    "cli",
+    "productivity",
+    "tasks",
+    "habits",
+    "streak",
+    "terminal",
+    "ink",
+    "friday"
+  ],
+  "author": "sridattasai_v",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
   },
   "scripts": {
     "start": "tsx src/app.jsx",
@@ -12,25 +33,9 @@
     "demo": "tsx src/demo.jsx",
     "test": "echo \"No tests yet\""
   },
-  "keywords": [
-    "cli",
-    "nodejs",
-    "productivity",
-    "tasks",
-    "habits"
-  ],
-  "author": "Datta",
-  "license": "ISC",
-  "description": "F.R.I.D.A.Y v1 - a personal daily task and habit manager CLI (in development).",
   "dependencies": {
-    "boxen": "^8.0.1",
     "cfonts": "^3.3.1",
-    "chalk": "^5.6.2",
-    "didyoumean": "^1.2.2",
-    "figlet": "^1.11.0",
     "ink": "^7.0.0",
-    "ink-spinner": "^5.0.0",
-    "ora": "^9.3.0",
     "react": "^19.2.4",
     "uuid": "^13.0.0"
   },

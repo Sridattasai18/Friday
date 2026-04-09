@@ -7,8 +7,9 @@ const CONFIG_PATH = join(DIR, 'config.json');
 
 const DEFAULTS = {
   name: 'Datta',
-  theme: 'dark',
   bannerColor: '#cc8b3c',
+  bannerFont: 'block',
+  greetingStyle: 'dry',
   firstLaunch: true,
 };
 
@@ -21,7 +22,8 @@ export function loadConfig() {
   }
 }
 
-export function saveConfig(config) {
+export function saveConfig(updates) {
+  const merged = { ...loadConfig(), ...updates };
   if (!existsSync(DIR)) mkdirSync(DIR, { recursive: true });
-  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
+  writeFileSync(CONFIG_PATH, JSON.stringify(merged, null, 2), 'utf-8');
 }

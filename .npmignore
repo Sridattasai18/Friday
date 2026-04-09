@@ -1,0 +1,20 @@
+# Dev files
+src/demo.jsx
+.env.example
+*.png
+package-lock.json
+.cursor/
+.vscode/
+*.log
+*.md
+!README.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local data (never ship user data)
+.friday/
+
+# Dev deps artifacts
+node_modules/

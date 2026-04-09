@@ -8,7 +8,14 @@ export function getResponse(event, context = {}) {
     pendingCount = 0,
     name = 'Datta',
     timeOfDay,
+    style = 'dry',
   } = context;
+
+  if (event === 'greetingPreview') {
+    if (style === 'warm') return "Good to have you here. Let's get things done.";
+    if (style === 'casual') return 'Hey. Ready when you are.';
+    return "Efficient. Let's keep it that way.";
+  }
 
   if (event === 'habitDone') {
     if (streak >= 10) {
@@ -37,6 +44,38 @@ export function getResponse(event, context = {}) {
 
   if (event === 'greeting') {
     const suffix = pendingCount === 1 ? '' : 's';
+
+    if (style === 'warm') {
+      if (timeOfDay === 'morning') {
+        return pendingCount > 0
+          ? `Good morning, ${name}. ${pendingCount} thing${suffix} waiting — one step at a time.`
+          : `Good morning, ${name}. Nothing on the list yet — a gentle start.`;
+      }
+      if (timeOfDay === 'afternoon') {
+        return pendingCount > 0
+          ? `Afternoon, ${name}. ${pendingCount} still open — you've got time.`
+          : `Afternoon, ${name}. All clear so far — nice pace.`;
+      }
+      return pendingCount > 0
+        ? `Evening, ${name}. ${pendingCount} left — close what you can, be kind to yourself about the rest.`
+        : `Evening, ${name}. A quiet day — that counts too.`;
+    }
+
+    if (style === 'casual') {
+      if (timeOfDay === 'morning') {
+        return pendingCount > 0
+          ? `Hey ${name}, morning. ${pendingCount} thing${suffix} on the list.`
+          : `Hey ${name}. List's empty — slow morning.`;
+      }
+      if (timeOfDay === 'afternoon') {
+        return pendingCount > 0
+          ? `Hey ${name}. Still ${pendingCount} hanging there.`
+          : `Hey ${name}. Nothing pending — smooth afternoon.`;
+      }
+      return pendingCount > 0
+        ? `Evening, ${name}. ${pendingCount} left — no stress, just finish what you can.`
+        : `Evening, ${name}. Chill day.`;
+    }
 
     if (timeOfDay === 'morning') {
       return pendingCount > 0

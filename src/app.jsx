@@ -2,46 +2,92 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Box, Text, render, useInput } from 'ink';
 import cfonts from 'cfonts';
 import { loadTasks, saveTasks } from '../core/storage.js';
-import { addTask, markDone, markSkipped, clearDone, getStreak } from '../core/commands.js';
+import { addTask, markDone, markSkipped, clearDone, getStreak, resetHabitDay } from '../core/commands.js';
 import { getResponse } from '../core/personality.js';
 import { loadConfig, saveConfig } from '../core/config.js';
+import Onboarding from './Onboarding.jsx';
 
-const COLORS = {
-  green: '#34d399',
-  cyan: '#22d3ee',
-  amber: '#fbbf24',
-  rose: '#fb7185',
-  violet: '#a78bfa',
-  dim: '#4b5563',
-  muted: '#9ca3af',
-  bright: '#f9fafb',
-};
+function hexToHsl(hex) {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h; let s;
+  const l = (max + min) / 2;
+  if (max === min) {
+    h = 0;
+    s = 0;
+  } else {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+      case g: h = ((b - r) / d + 2) / 6; break;
+      default: h = ((r - g) / d + 4) / 6; break;
+    }
+  }
+  return [Math.round(h * 360), Math.round(s * 100), Math.round(l * 100)];
+}
+
+function hslToHex(h, s, l) {
+  s /= 100;
+  l /= 100;
+  const k = (n) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return `#${[f(0), f(8), f(4)].map((x) =>
+    Math.round(x * 255).toString(16).padStart(2, '0')
+  ).join('')}`;
+}
+
+function buildAccentPalette(accentHex) {
+  const hex = /^#[0-9a-fA-F]{6}$/.test(accentHex) ? accentHex : '#cc8b3c';
+  const [h, s] = hexToHsl(hex);
+
+  return {
+    accent: hex,
+    cyan: hslToHex((h + 150) % 360, Math.min(s, 70), 60),
+    green: hslToHex((h + 120) % 360, Math.min(s, 65), 55),
+    amber: hslToHex((h + 30) % 360, Math.min(s, 80), 60),
+    rose: hslToHex((h + 180) % 360, Math.min(s, 70), 65),
+    violet: hslToHex((h + 60) % 360, Math.min(s, 60), 65),
+    dim: '#4b5563',
+    muted: '#9ca3af',
+    bright: '#f9fafb',
+  };
+}
+
 const SECTION_DIVIDER = '─'.repeat(28);
-const statusIcon = {
-  done: { icon: '●', label: 'DONE', color: COLORS.dim },
-  skipped: { icon: '◌', label: 'SKIPPED', color: COLORS.amber },
-  pending: { icon: '○', label: 'PENDING', color: COLORS.green },
-};
 
-const QUICK_COMMANDS = [
-  { value: '/add', label: '/add    - Add a task or habit', color: COLORS.green },
-  { value: '/done', label: '/done   - Mark as done', color: COLORS.green },
-  { value: '/delete', label: '/delete - Delete an item', color: COLORS.rose },
-  { value: '/features', label: '/features - Open power commands', color: COLORS.amber },
-  { value: '/settings', label: '/settings - View/edit settings', color: COLORS.violet },
-  { value: '/exit', label: '/exit   - Quit F.R.I.D.A.Y', color: COLORS.dim },
+const BANNER_FONTS = [
+  'block', 'simple', '3d', 'simple3d', 'chrome',
+  'huge', 'shade', 'slick', 'grid', 'tiny',
 ];
 
-const ADD_SUB_COMMANDS = [
-  { value: '/add task', label: '/task  - Add a new task', color: COLORS.green },
-  { value: '/add habit', label: '/habit - Add a new habit', color: COLORS.cyan },
-];
+const GREETING_STYLES = ['dry', 'warm', 'casual'];
 
-const FEATURE_COMMANDS = [
-  { value: '/streak', label: '/streak - Show habit streaks', color: COLORS.amber },
-  { value: '/list', label: '/list   - Reload task list', color: COLORS.green },
-  { value: '/clear', label: '/clear  - Remove completed tasks', color: COLORS.dim },
-  { value: '/help', label: '/help   - Show all commands', color: COLORS.violet },
+const SETTINGS_FIELDS = [
+  {
+    key: 'name',
+    label: 'name',
+    hint: 'ENTER to edit · type new name · ENTER to confirm',
+  },
+  {
+    key: 'greetingStyle',
+    label: 'greeting',
+    hint: 'LEFT/RIGHT to cycle dry | warm | casual',
+  },
+  {
+    key: 'bannerColor',
+    label: 'banner color',
+    hint: 'LEFT/RIGHT presets · h = type hex',
+  },
+  {
+    key: 'bannerFont',
+    label: 'banner font',
+    hint: 'LEFT/RIGHT to cycle · takes effect on relaunch',
+  },
 ];
 
 const COLOR_PRESETS = {
@@ -52,6 +98,8 @@ const COLOR_PRESETS = {
   rose: '#fb7185',
 };
 
+const COLOR_PRESET_ORDER = ['amber', 'green', 'cyan', 'violet', 'rose'];
+
 const COMMAND_CONTEXT = {
   '/add': 'adding a task or habit...',
   '/done': 'marking as done...',
@@ -59,10 +107,12 @@ const COMMAND_CONTEXT = {
   '/skip': 'skipping a habit...',
   '/streak': 'checking streaks...',
   '/clear': 'clearing completed tasks...',
+  '/reset': 'resetting a habit day...',
   '/list': 'loading your list...',
   '/settings': 'opening settings...',
   '/features': 'opening features...',
   '/help': 'showing all commands...',
+  '/resetday': 'resetting a habit day...',
   '/exit': 'shutting down...',
 };
 
@@ -103,26 +153,102 @@ function resetHabits(tasks) {
   return updatedTasks;
 }
 
-function formatHelpLines() {
+function buildDotRow(log = {}, colors) {
+  const today = new Date();
+  const dots = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const key = d.toISOString().split('T')[0];
+    const status = log[key];
+    if (status === 'done') dots.push({ char: '▓ ', color: colors.green });
+    if (status === 'skipped') dots.push({ char: '▒ ', color: colors.amber });
+    if (!status) dots.push({ char: '░ ', color: colors.dim });
+  }
+  return dots;
+}
+
+function buildDateAxis() {
+  const today = new Date();
+  const labels = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    labels.push(d);
+  }
+  const left = `${labels[0].getMonth() + 1}/${labels[0].getDate()}`;
+  const right = `${labels[13].getMonth() + 1}/${labels[13].getDate()}`;
+  const middle = ' '.repeat(28 - left.length - right.length);
+  return left + middle + right;
+}
+
+function formatHelpLines(colors) {
   return [
-    { cmd: '/add <title>', desc: 'add a task or habit', color: COLORS.green },
-    { cmd: '/done <title>', desc: 'mark a task or habit done', color: COLORS.green },
-    { cmd: '/delete <title>', desc: 'delete a task or habit', color: COLORS.rose },
-    { cmd: '/skip <title>', desc: 'skip a habit for today', color: COLORS.amber },
-    { cmd: '/streak', desc: 'show all habit streaks', color: COLORS.amber },
-    { cmd: '/list', desc: 'reload and show all tasks', color: COLORS.cyan },
-    { cmd: '/clear', desc: 'remove all completed tasks', color: COLORS.dim },
-    { cmd: '/settings <key>', desc: 'change name, theme or color', color: COLORS.violet },
-    { cmd: '/features', desc: 'open power commands panel', color: COLORS.cyan },
-    { cmd: '/help', desc: 'show this list', color: COLORS.violet },
-    { cmd: '/exit', desc: 'quit F.R.I.D.A.Y', color: COLORS.dim },
+    { cmd: '/add <title>', desc: 'add a task or habit', color: colors.green },
+    { cmd: '/done <title>', desc: 'mark a task or habit done', color: colors.green },
+    { cmd: '/delete <title>', desc: 'delete a task or habit', color: colors.rose },
+    { cmd: '/skip <title>', desc: 'skip a habit for today', color: colors.amber },
+    { cmd: '/streak', desc: 'show all habit streaks', color: colors.amber },
+    { cmd: '/list', desc: 'reload and show all tasks', color: colors.cyan },
+    { cmd: '/clear', desc: 'remove all completed tasks', color: colors.dim },
+    { cmd: '/reset', desc: 'open day reset for habits', color: colors.rose },
+    { cmd: '/settings <key>', desc: 'change name or color', color: colors.violet },
+    { cmd: '/features', desc: 'open power commands panel', color: colors.cyan },
+    { cmd: '/help', desc: 'show this list', color: colors.violet },
+    { cmd: '/resetday <habit> <YYYY-MM-DD>', desc: 'clear one habit log day', color: colors.rose },
+    { cmd: '/exit', desc: 'quit F.R.I.D.A.Y', color: colors.dim },
   ];
 }
 
 function App() {
+  const bootConfig = loadConfig();
   const [screen, setScreen] = useState('greeting');
+  const [bootDone, setBootDone] = useState(false);
   const [tasks, setTasks] = useState([]);
   const [config, setConfig] = useState(loadConfig());
+  const COLORS = useMemo(
+    () => buildAccentPalette(config.bannerColor || '#cc8b3c'),
+    [config.bannerColor]
+  );
+  const statusIcon = {
+    done: { icon: '●', label: 'DONE', color: COLORS.dim },
+    skipped: { icon: '◌', label: 'SKIPPED', color: COLORS.amber },
+    pending: { icon: '○', label: 'PENDING', color: COLORS.green },
+  };
+  const QUICK_COMMANDS = useMemo(() => ([
+    { value: '/add', label: '/add    - Add a task or habit', color: COLORS.green },
+    { value: '/done', label: '/done   - Mark as done', color: COLORS.green },
+    { value: '/delete', label: '/delete - Delete an item', color: COLORS.rose },
+    { value: '/features', label: '/features - Open power commands', color: COLORS.amber },
+    { value: '/settings', label: '/settings - View/edit settings', color: COLORS.violet },
+    { value: '/exit', label: '/exit   - Quit F.R.I.D.A.Y', color: COLORS.dim },
+  ]), [COLORS]);
+  const ALL_COMMANDS = useMemo(() => ([
+    { value: '/add', label: '/add      - Add a task or habit', color: COLORS.green },
+    { value: '/done', label: '/done     - Mark as done', color: COLORS.green },
+    { value: '/skip', label: '/skip     - Skip a habit today', color: COLORS.amber },
+    { value: '/delete', label: '/delete   - Delete an item', color: COLORS.rose },
+    { value: '/clear', label: '/clear    - Remove completed tasks', color: COLORS.dim },
+    { value: '/reset', label: '/reset    - Reset habit day (1-14)', color: COLORS.rose },
+    { value: '/streak', label: '/streak   - Show habit streaks', color: COLORS.amber },
+    { value: '/list', label: '/list     - Reload task list', color: COLORS.green },
+    { value: '/help', label: '/help     - Show all commands', color: COLORS.violet },
+    { value: '/resetday', label: '/resetday - Reset a habit day', color: COLORS.rose },
+    { value: '/settings', label: '/settings - View/edit settings', color: COLORS.violet },
+    { value: '/features', label: '/features - Open power commands', color: COLORS.cyan },
+    { value: '/exit', label: '/exit     - Quit F.R.I.D.A.Y', color: COLORS.dim },
+  ]), [COLORS]);
+  const ADD_SUB_COMMANDS = useMemo(() => ([
+    { value: '/add task', label: '/task  - Add a new task', color: COLORS.green },
+    { value: '/add habit', label: '/habit - Add a new habit', color: COLORS.cyan },
+  ]), [COLORS]);
+  const FEATURE_COMMANDS = useMemo(() => ([
+    { value: '/streak', label: '/streak - Show habit streaks', color: COLORS.amber },
+    { value: '/reset', label: '/reset  - Reset a habit day', color: COLORS.rose },
+    { value: '/list', label: '/list   - Reload task list', color: COLORS.green },
+    { value: '/clear', label: '/clear  - Remove completed tasks', color: COLORS.dim },
+    { value: '/help', label: '/help   - Show all commands', color: COLORS.violet },
+  ]), [COLORS]);
   const [input, setInput] = useState('');
   const [activeCommand, setActiveCommand] = useState('');
   const [echo, setEcho] = useState('Type /help to see available commands.');
@@ -143,15 +269,29 @@ function App() {
   const [featuresIndex, setFeaturesIndex] = useState(0);
   const [showHelpPanel, setShowHelpPanel] = useState(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
+  const [showResetPanel, setShowResetPanel] = useState(false);
+  const [resetHabitIndex, setResetHabitIndex] = useState(0);
+  const [resetDayIndex, setResetDayIndex] = useState(0);
+  const [settingsFieldIndex, setSettingsFieldIndex] = useState(0);
+  const [settingsEditMode, setSettingsEditMode] = useState(false);
+  const [settingsEditValue, setSettingsEditValue] = useState('');
+  const [bannerColorInputMode, setBannerColorInputMode] = useState(false);
   const [showStreakPanel, setShowStreakPanel] = useState(false);
   const [cursorVisible, setCursorVisible] = useState(true);
   const [continueBlink, setContinueBlink] = useState(true);
+
+  useEffect(() => {
+    if (bootDone) {
+      setConfig(loadConfig());
+    }
+  }, [bootDone]);
 
   useEffect(() => {
     const shouldBlinkCursor = screen === 'app'
       && !showHelpPanel
       && !showFeaturesPanel
       && !showSettingsPanel
+      && !showResetPanel
       && !showSuggestions
       && !showTaskSuggestions;
 
@@ -162,7 +302,7 @@ function App() {
 
     const timer = setInterval(() => setCursorVisible((v) => !v), 530);
     return () => clearInterval(timer);
-  }, [screen, showHelpPanel, showFeaturesPanel, showSettingsPanel, showSuggestions, showTaskSuggestions]);
+  }, [screen, showHelpPanel, showFeaturesPanel, showSettingsPanel, showResetPanel, showSuggestions, showTaskSuggestions]);
 
   useEffect(() => {
     if (screen !== 'greeting') {
@@ -185,8 +325,13 @@ function App() {
   const greetingText = useMemo(() => {
     const hour = new Date().getHours();
     const timeOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
-    return getResponse('greeting', { name: config.name, pendingCount: pendingTaskCount, timeOfDay });
-  }, [pendingTaskCount, config.name]);
+    return getResponse('greeting', {
+      name: config.name,
+      pendingCount: pendingTaskCount,
+      timeOfDay,
+      style: config.greetingStyle || 'dry',
+    });
+  }, [pendingTaskCount, config.name, config.greetingStyle]);
   const taskItems = tasks.filter((task) => task.type === 'task');
   const habitItems = tasks.filter((task) => task.type === 'habit');
   const topStreak = habitItems.reduce((max, habit) => Math.max(max, habit.streak || 0), 0);
@@ -207,23 +352,15 @@ function App() {
 
     const hour = new Date().getHours();
     const timeOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
-    const full = getResponse('greeting', { name: config.name, pendingCount: pendingTaskCount, timeOfDay });
-    let i = 0;
-
-    setGreetingDisplayed('');
-    setGreetingDone(false);
-
-    const interval = setInterval(() => {
-      i += 1;
-      setGreetingDisplayed(full.slice(0, i));
-      if (i >= full.length) {
-        clearInterval(interval);
-        setGreetingDone(true);
-      }
-    }, 38);
-
-    return () => clearInterval(interval);
-  }, [screen, pendingTaskCount, config.name]);
+    const full = getResponse('greeting', {
+      name: config.name,
+      pendingCount: pendingTaskCount,
+      timeOfDay,
+      style: config.greetingStyle || 'dry',
+    });
+    setGreetingDisplayed(full);
+    setGreetingDone(true);
+  }, [screen, pendingTaskCount, config.name, config.greetingStyle]);
 
   const updateTaskSuggestions = (currentInput) => {
     const trimmed = currentInput.trimStart();
@@ -267,22 +404,15 @@ function App() {
       updateTaskSuggestions(nextInput);
       return;
     } else {
-      filtered = QUICK_COMMANDS.filter((cmd) => cmd.value.startsWith(nextInput));
+      filtered = ALL_COMMANDS.filter((cmd) =>
+        cmd.value.startsWith(nextInput) || nextInput.startsWith(cmd.value)
+      );
     }
 
     setSuggestions(filtered);
     setShowSuggestions(filtered.length > 0);
     setSelectedIndex(0);
     updateTaskSuggestions(nextInput);
-  };
-
-  const refreshFromDisk = (nextEcho) => {
-    const diskTasks = loadTasks();
-    setTasks(diskTasks);
-    if (nextEcho) {
-      setEcho(nextEcho);
-      setEchoIsCommand(false);
-    }
   };
 
   const autocompleteFromSelection = () => {
@@ -408,6 +538,19 @@ function App() {
       return;
     }
 
+    if (command === '/reset') {
+      const habits = tasks.filter((task) => task.type === 'habit');
+      if (habits.length === 0) {
+        triggerEcho('No habits to reset.', 'error');
+        return;
+      }
+      setShowResetPanel(true);
+      setResetHabitIndex(0);
+      setResetDayIndex(0);
+      triggerEcho('Pick habit and day (1-14), then ENTER.', 'info');
+      return;
+    }
+
     if (command === '/streak') {
       const habits = tasks.filter((task) => task.type === 'habit');
       if (habits.length === 0) {
@@ -469,6 +612,39 @@ function App() {
       return;
     }
 
+    if (command === '/resetday') {
+      if (!arg) {
+        triggerEcho('Usage: /resetday <habit> <YYYY-MM-DD>', 'error');
+        return;
+      }
+      const parts = arg.split(' ');
+      const date = parts[parts.length - 1];
+      const habitArg = parts.slice(0, -1).join(' ').trim();
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+
+      if (!habitArg || !dateRegex.test(date)) {
+        triggerEcho('Usage: /resetday <habit> <YYYY-MM-DD>', 'error');
+        return;
+      }
+
+      const resolvedId = resolveTaskIdFromArg(habitArg);
+      if (!resolvedId) {
+        triggerEcho('No matching habit found', 'error');
+        return;
+      }
+      const habit = tasks.find((item) => item.id === resolvedId);
+      if (!habit || habit.type !== 'habit') {
+        triggerEcho('No matching habit found', 'error');
+        return;
+      }
+
+      const updated = resetHabitDay(tasks, habit.id, date);
+      saveTasks(updated);
+      setTasks(loadTasks());
+      triggerEcho(`Reset ${habit.title} on ${date}.`, 'success');
+      return;
+    }
+
     if (command === '/settings') {
       if (!arg) {
         setShowSettingsPanel(true);
@@ -490,17 +666,6 @@ function App() {
         triggerEcho(`Name updated to ${value}.`, 'success');
         return;
       }
-      if (key === 'theme') {
-        if (!['dark', 'light'].includes(value)) {
-          triggerEcho('Theme must be dark or light. Example: /settings theme dark', 'error');
-          return;
-        }
-        const updated = { ...loadConfig(), theme: value };
-        saveConfig(updated);
-        setConfig(updated);
-        triggerEcho(`Theme set to ${value}. Restart F.R.I.D.A.Y to apply.`, 'success');
-        return;
-      }
       if (key === 'color') {
         const preset = COLOR_PRESETS[value.toLowerCase()];
         const hex = preset || value;
@@ -518,7 +683,7 @@ function App() {
         triggerEcho(`Banner color set to ${hex}. Restart to apply.`, 'success');
         return;
       }
-      triggerEcho(`Unknown setting: ${key}. Try name or theme.`, 'error');
+      triggerEcho(`Unknown setting: ${key}. Try name or color.`, 'error');
       return;
     }
 
@@ -566,6 +731,51 @@ function App() {
       }
     }
 
+    if (showResetPanel) {
+      const habits = tasks.filter((task) => task.type === 'habit');
+      if (habits.length === 0) {
+        setShowResetPanel(false);
+        return;
+      }
+
+      if (key.escape || key.backspace || key.delete) {
+        setShowResetPanel(false);
+        setResetHabitIndex(0);
+        setResetDayIndex(0);
+        return;
+      }
+      if (key.upArrow) {
+        setResetHabitIndex((prev) => (prev - 1 + habits.length) % habits.length);
+        return;
+      }
+      if (key.downArrow) {
+        setResetHabitIndex((prev) => (prev + 1) % habits.length);
+        return;
+      }
+      if (key.leftArrow) {
+        setResetDayIndex((prev) => (prev + 1) % 14);
+        return;
+      }
+      if (key.rightArrow) {
+        setResetDayIndex((prev) => (prev - 1 + 14) % 14);
+        return;
+      }
+      if (key.return) {
+        const selectedHabit = habits[resetHabitIndex];
+        if (!selectedHabit) return;
+        const targetDate = new Date();
+        targetDate.setDate(targetDate.getDate() - resetDayIndex);
+        const isoDate = targetDate.toISOString().split('T')[0];
+        const updated = resetHabitDay(tasks, selectedHabit.id, isoDate);
+        saveTasks(updated);
+        setTasks(loadTasks());
+        triggerEcho(`Reset ${selectedHabit.title} on day ${resetDayIndex + 1} (${isoDate}).`, 'success');
+        setShowResetPanel(false);
+        return;
+      }
+      return;
+    }
+
     if (showHelpPanel) {
       if (key.return || key.escape) {
         setShowHelpPanel(false);
@@ -574,14 +784,216 @@ function App() {
     }
 
     if (showSettingsPanel) {
-      if (key.return || key.escape) {
-        setShowSettingsPanel(false);
+      // ESC always exits edit mode first, then closes panel
+      if (key.escape) {
+        if (settingsEditMode) {
+          setSettingsEditMode(false);
+          setSettingsEditValue('');
+          setBannerColorInputMode(false);
+        } else {
+          setShowSettingsPanel(false);
+          setSettingsFieldIndex(0);
+        }
         return;
       }
+
+      // Navigate fields when not in edit mode
+      if (!settingsEditMode) {
+        const selectedField = SETTINGS_FIELDS[settingsFieldIndex];
+        if (key.upArrow) {
+          setSettingsFieldIndex((prev) =>
+            (prev - 1 + SETTINGS_FIELDS.length) % SETTINGS_FIELDS.length
+          );
+          return;
+        }
+        if (key.downArrow) {
+          setSettingsFieldIndex((prev) =>
+            (prev + 1) % SETTINGS_FIELDS.length
+          );
+          return;
+        }
+        if (keyInput === 'h' && selectedField?.key === 'bannerColor') {
+          setBannerColorInputMode(true);
+          setSettingsEditMode(true);
+          setSettingsEditValue('#');
+          return;
+        }
+        if (key.return) {
+          const field = SETTINGS_FIELDS[settingsFieldIndex];
+          if (field.key === 'name') {
+            setSettingsEditMode(true);
+            setSettingsEditValue(config.name);
+          }
+          // bannerColor and bannerFont use LEFT/RIGHT; ENTER confirms current
+          if (field.key === 'bannerColor' || field.key === 'bannerFont') {
+            setSettingsEditMode(true);
+            setSettingsEditValue('');
+          }
+          return;
+        }
+        // LEFT/RIGHT for greeting style / banner color / font (works without entering edit mode)
+        if (key.leftArrow || key.rightArrow) {
+          const field = SETTINGS_FIELDS[settingsFieldIndex];
+          if (field.key === 'greetingStyle') {
+            const rawIdx = GREETING_STYLES.indexOf(config.greetingStyle || 'dry');
+            const currentIdx = rawIdx >= 0 ? rawIdx : 0;
+            const nextIdx = key.rightArrow
+              ? (currentIdx + 1) % GREETING_STYLES.length
+              : (currentIdx - 1 + GREETING_STYLES.length) % GREETING_STYLES.length;
+            const next = GREETING_STYLES[nextIdx];
+            saveConfig({ greetingStyle: next });
+            setConfig((prev) => ({ ...prev, greetingStyle: next }));
+            return;
+          }
+          if (field.key === 'bannerColor') {
+            const currentHex = config.bannerColor;
+            const currentName = Object.entries(COLOR_PRESETS).find(
+              ([, v]) => v === currentHex
+            )?.[0];
+            const currentIdx = COLOR_PRESET_ORDER.indexOf(currentName);
+            const nextIdx = key.rightArrow
+              ? (currentIdx + 1) % COLOR_PRESET_ORDER.length
+              : (currentIdx - 1 + COLOR_PRESET_ORDER.length) % COLOR_PRESET_ORDER.length;
+            const nextName = COLOR_PRESET_ORDER[nextIdx] ?? COLOR_PRESET_ORDER[0];
+            const nextColor = COLOR_PRESETS[nextName];
+            saveConfig({ bannerColor: nextColor });
+            setConfig((prev) => ({ ...prev, bannerColor: nextColor }));
+            return;
+          }
+          if (field.key === 'bannerFont') {
+            const rawIdx = BANNER_FONTS.indexOf(config.bannerFont || 'block');
+            const currentIdx = rawIdx >= 0 ? rawIdx : 0;
+            const nextIdx = key.rightArrow
+              ? (currentIdx + 1) % BANNER_FONTS.length
+              : (currentIdx - 1 + BANNER_FONTS.length) % BANNER_FONTS.length;
+            const nextFont = BANNER_FONTS[nextIdx];
+            saveConfig({ bannerFont: nextFont });
+            setConfig((prev) => ({ ...prev, bannerFont: nextFont }));
+            return;
+          }
+        }
+      }
+
+      // Edit mode — name field text input
+      if (settingsEditMode && SETTINGS_FIELDS[settingsFieldIndex].key === 'name') {
+        if (key.return) {
+          const trimmed = settingsEditValue.trim();
+          if (trimmed.length > 0) {
+            saveConfig({ name: trimmed });
+            setConfig((prev) => ({ ...prev, name: trimmed }));
+          }
+          setSettingsEditMode(false);
+          setSettingsEditValue('');
+          return;
+        }
+        if (key.backspace || key.delete) {
+          setSettingsEditValue((prev) => prev.slice(0, -1));
+          return;
+        }
+        if (keyInput && !key.ctrl) {
+          setSettingsEditValue((prev) => prev + keyInput);
+          return;
+        }
+      }
+
+      // Edit mode — bannerColor hex typing
+      if (
+        settingsEditMode
+        && bannerColorInputMode
+        && SETTINGS_FIELDS[settingsFieldIndex].key === 'bannerColor'
+      ) {
+        if (key.return) {
+          const value = settingsEditValue;
+          const isValidHex = /^#[0-9a-fA-F]{6}$/.test(value);
+          if (isValidHex) {
+            saveConfig({ bannerColor: value });
+            setConfig((prev) => ({ ...prev, bannerColor: value }));
+            setBannerColorInputMode(false);
+            setSettingsEditMode(false);
+            setSettingsEditValue('');
+          } else {
+            triggerEcho('invalid hex — use format #rrggbb', 'error');
+          }
+          return;
+        }
+        if (key.backspace || key.delete) {
+          setSettingsEditValue((prev) => (prev.length <= 1 ? '#' : prev.slice(0, -1)));
+          return;
+        }
+        if (keyInput && !key.ctrl) {
+          setSettingsEditValue((prev) => prev + keyInput);
+          return;
+        }
+      }
+
+      // Edit mode — LEFT/RIGHT for greetingStyle, bannerColor, bannerFont (same as above, reachable from edit mode too)
+      if (settingsEditMode) {
+        const field = SETTINGS_FIELDS[settingsFieldIndex];
+        if (key.leftArrow || key.rightArrow) {
+          if (field.key === 'greetingStyle') {
+            const rawIdx = GREETING_STYLES.indexOf(config.greetingStyle || 'dry');
+            const currentIdx = rawIdx >= 0 ? rawIdx : 0;
+            const nextIdx = key.rightArrow
+              ? (currentIdx + 1) % GREETING_STYLES.length
+              : (currentIdx - 1 + GREETING_STYLES.length) % GREETING_STYLES.length;
+            const next = GREETING_STYLES[nextIdx];
+            saveConfig({ greetingStyle: next });
+            setConfig((prev) => ({ ...prev, greetingStyle: next }));
+            return;
+          }
+          if (field.key === 'bannerColor') {
+            const currentHex = config.bannerColor;
+            const currentName = Object.entries(COLOR_PRESETS).find(
+              ([, v]) => v === currentHex
+            )?.[0];
+            const currentIdx = COLOR_PRESET_ORDER.indexOf(currentName);
+            const nextIdx = key.rightArrow
+              ? (currentIdx + 1) % COLOR_PRESET_ORDER.length
+              : (currentIdx - 1 + COLOR_PRESET_ORDER.length) % COLOR_PRESET_ORDER.length;
+            const nextName = COLOR_PRESET_ORDER[nextIdx] ?? COLOR_PRESET_ORDER[0];
+            const nextColor = COLOR_PRESETS[nextName];
+            saveConfig({ bannerColor: nextColor });
+            setConfig((prev) => ({ ...prev, bannerColor: nextColor }));
+            return;
+          }
+          if (field.key === 'bannerFont') {
+            const rawIdx = BANNER_FONTS.indexOf(config.bannerFont || 'block');
+            const currentIdx = rawIdx >= 0 ? rawIdx : 0;
+            const nextIdx = key.rightArrow
+              ? (currentIdx + 1) % BANNER_FONTS.length
+              : (currentIdx - 1 + BANNER_FONTS.length) % BANNER_FONTS.length;
+            const nextFont = BANNER_FONTS[nextIdx];
+            saveConfig({ bannerFont: nextFont });
+            setConfig((prev) => ({ ...prev, bannerFont: nextFont }));
+            return;
+          }
+        }
+        if (key.return) {
+          setSettingsEditMode(false);
+          setSettingsEditValue('');
+          setBannerColorInputMode(false);
+          return;
+        }
+      }
+
+      return; // consume all input while panel is open
     }
 
     if (key.ctrl && keyInput === 'c') {
       process.exit(0);
+    }
+
+    if (key.escape) {
+      setInput('');
+      setAddSubMode(false);
+      setShowSuggestions(false);
+      setSuggestions([]);
+      setSelectedIndex(0);
+      setShowTaskSuggestions(false);
+      setTaskSuggestions([]);
+      setTaskSuggestionIndex(0);
+      setActiveCommand('');
+      return;
     }
 
     if (key.backspace || key.delete) {
@@ -636,6 +1048,24 @@ function App() {
 
     if (key.return) {
       setActiveCommand('');
+      if (showTaskSuggestions && taskSuggestions.length > 0) {
+        const trimmed = input.trim();
+        const firstSpaceIdx = trimmed.indexOf(' ');
+        const command = firstSpaceIdx === -1 ? trimmed : trimmed.slice(0, firstSpaceIdx);
+        const selectedTask = taskSuggestions[taskSuggestionIndex];
+        if (selectedTask && (command === '/done' || command === '/skip' || command === '/delete')) {
+          const completedInput = `${command} ${selectedTask.title}`;
+          executeCommand(completedInput);
+          setInput('');
+          setShowTaskSuggestions(false);
+          setTaskSuggestions([]);
+          setTaskSuggestionIndex(0);
+          setShowSuggestions(false);
+          setSuggestions([]);
+          setSelectedIndex(0);
+          return;
+        }
+      }
       const submitted = input.trim();
       if (submitted.length > 0) {
         if (showSuggestions && selectedIndex >= 0 && suggestions[selectedIndex]) {
@@ -707,6 +1137,9 @@ function App() {
   });
 
   return (
+    !bootDone && bootConfig.firstLaunch ? (
+      <Onboarding onComplete={() => setBootDone(true)} />
+    ) : (
     <Box flexDirection="column">
       {screen === 'greeting' ? (
         <Box borderStyle="round" borderColor={COLORS.amber} flexDirection="column" paddingX={1}>
@@ -745,6 +1178,42 @@ function App() {
 
       <Box flexDirection="column">
         <Box>
+          <Text color={COLORS.cyan}>▍</Text>
+          <Text color={COLORS.cyan}> HABITS </Text>
+          <Text color={COLORS.dim}>({habitItems.length})</Text>
+        </Box>
+        <Text color={COLORS.dim}>{SECTION_DIVIDER}</Text>
+        {habitItems.length === 0 ? (
+          <Text color={COLORS.dim}>No habits added yet.</Text>
+        ) : (
+          habitItems.map((habit) => {
+            const streak = habit.streak || 0;
+            return (
+              <Box key={habit.id} marginLeft={1}>
+                <Text color={statusIcon[habit.status] ? statusIcon[habit.status].color : COLORS.cyan}>
+                  {statusIcon[habit.status] ? `${statusIcon[habit.status].icon} ${statusIcon[habit.status].label} ` : '○ PENDING '}
+                </Text>
+                <Text color={habit.status === 'pending' ? COLORS.cyan : COLORS.dim}>{habit.title}</Text>
+                <Text color={COLORS.dim}>  </Text>
+                {buildDotRow(habit.log, COLORS).map((dot, i) => (
+                  <Text key={i} color={dot.color}>{dot.char}</Text>
+                ))}
+                <Text color={COLORS.dim}>  {habit.streak}d</Text>
+                {showStreakPanel ? <Text color={COLORS.dim}>  ({streak}d)</Text> : null}
+              </Box>
+            );
+          })
+        )}
+        <Box marginLeft={1}>
+          <Text color={COLORS.dim}>{'     '}</Text>
+          <Text color={COLORS.dim}>{buildDateAxis()}</Text>
+        </Box>
+      </Box>
+
+      <Box />
+
+      <Box flexDirection="column">
+        <Box>
           <Text color={COLORS.amber}>▍</Text>
           <Text color={COLORS.green}> TASKS </Text>
           <Text color={COLORS.dim}>({taskItems.length})</Text>
@@ -774,46 +1243,12 @@ function App() {
 
       <Box />
 
-      <Box flexDirection="column">
-        <Box>
-          <Text color={COLORS.cyan}>▍</Text>
-          <Text color={COLORS.cyan}> HABITS </Text>
-          <Text color={COLORS.dim}>({habitItems.length})</Text>
-        </Box>
-        <Text color={COLORS.dim}>{SECTION_DIVIDER}</Text>
-        {habitItems.length === 0 ? (
-          <Text color={COLORS.dim}>No habits added yet.</Text>
-        ) : (
-          habitItems.map((habit) => {
-            const streak = habit.streak || 0;
-            const filled = Math.min(Math.max(streak, 0), 10);
-            const barColor = filled >= 5 ? COLORS.green : COLORS.amber;
-            return (
-              <Box key={habit.id} marginLeft={1}>
-                <Text color={statusIcon[habit.status] ? statusIcon[habit.status].color : COLORS.cyan}>
-                  {statusIcon[habit.status] ? `${statusIcon[habit.status].icon} ${statusIcon[habit.status].label} ` : '○ PENDING '}
-                </Text>
-                <Text color={habit.status === 'pending' ? COLORS.cyan : COLORS.dim}>{habit.title}</Text>
-                <Text color={COLORS.dim}>  </Text>
-                <Text color={barColor}>{streak}d</Text>
-                <Text color={COLORS.dim}>  </Text>
-                <Text color={barColor}>{'█'.repeat(filled)}</Text>
-                <Text color={COLORS.dim}>{'░'.repeat(10 - filled)}</Text>
-                {showStreakPanel ? <Text color={COLORS.dim}>  ({streak}d)</Text> : null}
-              </Box>
-            );
-          })
-        )}
-      </Box>
-
-      <Box />
-
       <Text color={COLORS.dim}>{SECTION_DIVIDER}</Text>
       {showHelpPanel ? (
         <Box flexDirection="column" borderStyle="single" borderColor={COLORS.dim} paddingX={1}>
           <Text color={COLORS.violet}>  ▸ HELP</Text>
           <Text color={COLORS.dim}>  {'─'.repeat(44)}</Text>
-          {formatHelpLines().map((line) => (
+          {formatHelpLines(COLORS).map((line) => (
             <Box key={line.cmd}>
               <Text color={line.color}>  {line.cmd.padEnd(22)}</Text>
               <Text color={COLORS.dim}>  {line.desc}</Text>
@@ -838,71 +1273,128 @@ function App() {
         </Box>
       ) : null}
       {showSettingsPanel ? (
-        <Box flexDirection="column" borderStyle="single" borderColor={COLORS.dim} paddingX={1}>
+        <Box flexDirection="column" borderStyle="single" borderColor={COLORS.violet} paddingX={1}>
           <Text color={COLORS.violet}>  ▸ SETTINGS</Text>
           <Text color={COLORS.dim}>  {'─'.repeat(44)}</Text>
-          <Box>
-            <Text color={COLORS.dim}>  name        </Text>
-            <Text color={COLORS.bright}>{config.name}</Text>
-          </Box>
-          <Box>
-            <Text color={COLORS.dim}>  theme       </Text>
-            <Text color={COLORS.bright}>{config.theme}</Text>
-          </Box>
-          <Box>
-            <Text color={COLORS.dim}>  banner      </Text>
-            <Text color={COLORS.amber}>{config.bannerColor}</Text>
-          </Box>
+          {SETTINGS_FIELDS.map((field, idx) => {
+            const selected = idx === settingsFieldIndex;
+            const isEditing = selected && settingsEditMode;
+            let valueDisplay;
+            if (field.key === 'name') {
+              valueDisplay = isEditing
+                ? settingsEditValue + '█'
+                : config.name;
+            } else if (field.key === 'greetingStyle') {
+              valueDisplay = config.greetingStyle || 'dry';
+            } else if (field.key === 'bannerColor') {
+              if (isEditing && bannerColorInputMode) {
+                valueDisplay = settingsEditValue + '█';
+              } else {
+                // find preset name or show raw hex
+                const presetName = Object.entries(COLOR_PRESETS).find(
+                  ([, v]) => v === config.bannerColor
+                )?.[0];
+                valueDisplay = presetName
+                  ? `${presetName} (${config.bannerColor})`
+                  : config.bannerColor;
+              }
+            } else if (field.key === 'bannerFont') {
+              const fontIdx = BANNER_FONTS.indexOf(config.bannerFont || 'block');
+              const pos = fontIdx >= 0 ? fontIdx + 1 : 1;
+              valueDisplay = `${config.bannerFont || 'block'} (${pos}/${BANNER_FONTS.length})`;
+            }
+            return (
+              <Box key={field.key}>
+                <Text color={selected ? COLORS.violet : COLORS.dim}>
+                  {selected ? '› ' : '  '}
+                </Text>
+                <Text color={COLORS.dim}>{field.label.padEnd(14)}</Text>
+                <Text color={selected ? COLORS.bright : COLORS.muted}>{valueDisplay}</Text>
+                {selected && !isEditing && field.key === 'greetingStyle' && (
+                  <Text color={COLORS.dim}>  ← → to cycle</Text>
+                )}
+                {selected && !isEditing && field.key === 'bannerColor' && (
+                  <Text color={COLORS.dim}>  ← → presets  ·  h = type hex</Text>
+                )}
+                {selected && !isEditing && field.key === 'bannerFont' && (
+                  <Text color={COLORS.dim}>  ← → to cycle · takes effect on relaunch</Text>
+                )}
+                {selected && !isEditing && field.key === 'name' && (
+                  <Text color={COLORS.dim}>  ENTER to edit</Text>
+                )}
+              </Box>
+            );
+          })}
           <Text color={COLORS.dim}>  {'─'.repeat(44)}</Text>
-          <Text color={COLORS.dim}>  /settings name {'<value>'}</Text>
-          <Text color={COLORS.dim}>  /settings theme dark|light</Text>
-          <Text color={COLORS.dim}>  /settings color amber|green|cyan|violet|rose|#hex</Text>
+          <Text color={COLORS.dim}>
+            {settingsEditMode
+              ? SETTINGS_FIELDS[settingsFieldIndex].hint + ' · ESC to cancel'
+              : '↑ ↓ navigate  ·  ENTER select  ·  ESC close'}
+          </Text>
+        </Box>
+      ) : null}
+      {showResetPanel ? (
+        <Box flexDirection="column" borderStyle="single" borderColor={COLORS.rose} paddingX={1}>
+          <Text color={COLORS.rose}>  ▸ RESET HABIT DAY</Text>
           <Text color={COLORS.dim}>  {'─'.repeat(44)}</Text>
-          <Text color={COLORS.dim}>  Press ENTER or ESC to close</Text>
+          {habitItems.length === 0 ? (
+            <Text color={COLORS.dim}>  No habits available.</Text>
+          ) : (
+            habitItems.map((habit, idx) => (
+              <Text key={habit.id} color={idx === resetHabitIndex ? COLORS.bright : COLORS.dim}>
+                {idx === resetHabitIndex ? '› ' : '  '}
+                {habit.title}
+              </Text>
+            ))
+          )}
+          <Text color={COLORS.dim}>  {'─'.repeat(44)}</Text>
+          <Text color={COLORS.muted}>  Selected day: {resetDayIndex + 1} (1=today, 14=13 days ago)</Text>
+          <Text color={COLORS.dim}>  ↑ ↓ habit  ·  ← → day  ·  ENTER reset  ·  ESC close</Text>
         </Box>
       ) : null}
       <Text color={echoIsCommand ? COLORS.amber : echoColor}>→ {echoVisible ? (echo || ' ') : ' '}</Text>
 
-      {showSuggestions ? (
-        <Box flexDirection="column" borderStyle="single" borderColor={COLORS.dim} paddingX={1}>
-          {suggestions.map((item, idx) => {
-            const selected = idx === selectedIndex;
-            return (
-              <Text key={item.value} color={selected ? item.color : COLORS.dim} bold={selected}>
-                {selected ? '› ' : '  '}
-                {item.label}
-              </Text>
-            );
-          })}
-        </Box>
-      ) : <Box height={1} />}
+      <Box
+        flexDirection="column"
+        borderStyle="single"
+        borderColor={COLORS.dim}
+        paddingX={1}
+        display={showSuggestions && suggestions.length > 0 ? 'flex' : 'none'}
+      >
+        {suggestions.map((item, idx) => {
+          const selected = idx === selectedIndex;
+          return (
+            <Text key={item.value} color={selected ? item.color : COLORS.dim} bold={selected}>
+              {selected ? '› ' : '  '}
+              {item.label}
+            </Text>
+          );
+        })}
+      </Box>
 
-      {showTaskSuggestions ? (
-        <Box flexDirection="column" borderStyle="single" borderColor={COLORS.dim} paddingX={1}>
-          {taskSuggestions.map((item, idx) => {
-            const selected = idx === taskSuggestionIndex;
-            return (
-              <Text key={item.id} color={selected ? COLORS.amber : COLORS.dim}>
-                {selected ? '› ' : '  '}
-                {item.title}
-                <Text color={COLORS.dim}>  [{item.type}]</Text>
-              </Text>
-            );
-          })}
-        </Box>
-      ) : <Box height={1} />}
+      <Box
+        flexDirection="column"
+        borderStyle="single"
+        borderColor={COLORS.dim}
+        paddingX={1}
+        display={showTaskSuggestions && taskSuggestions.length > 0 ? 'flex' : 'none'}
+      >
+        {taskSuggestions.map((item, idx) => {
+          const selected = idx === taskSuggestionIndex;
+          return (
+            <Text key={item.id} color={selected ? COLORS.amber : COLORS.dim}>
+              {selected ? '› ' : '  '}
+              {item.title}
+              <Text color={COLORS.dim}>  [{item.type}]</Text>
+            </Text>
+          );
+        })}
+      </Box>
 
-      {activeCommand ? (
-        <Text color={COLORS.dim}>{activeCommand}</Text>
-      ) : null}
+      <Text color={COLORS.dim}>{activeCommand || ' '}</Text>
       <Box>
-        {/*
-          No modal/overlay focus mode exists yet, so input remains focused.
-          Cursor visibility can be gated here later if overlays are added.
-        */}
         {(() => {
-          const isInputFocused = true;
-          const displayText = input + (isInputFocused && cursorVisible ? '|' : ' ');
+          const displayText = input + (cursorVisible ? '|' : ' ');
           const baseText = displayText.slice(0, -1);
           const caret = displayText.slice(-1);
           return (
@@ -917,12 +1409,13 @@ function App() {
       </>
       ) : null}
     </Box>
+    )
   );
 }
 
 const initialConfig = loadConfig();
 cfonts.say('FRIDAY', {
-  font: 'block',
+  font: initialConfig.bannerFont || 'block',
   colors: [initialConfig.bannerColor || '#cc8b3c'],
   background: 'transparent',
   letterSpacing: 1,
