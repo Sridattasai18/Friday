@@ -1,6 +1,6 @@
 {
   "name": "@sridattasai_v/friday",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "F.R.I.D.A.Y — terminal productivity CLI. Tasks, habits, streaks.",
   "type": "module",
   "bin": {
