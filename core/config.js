@@ -8,6 +8,7 @@ const CONFIG_PATH = join(DIR, 'config.json');
 const DEFAULTS = {
   name: 'Datta',
   theme: 'dark',
+  bannerColor: '#cc8b3c',
   firstLaunch: true,
 };
 

@@ -44,6 +44,14 @@ const FEATURE_COMMANDS = [
   { value: '/help', label: '/help   - Show all commands', color: COLORS.violet },
 ];
 
+const COLOR_PRESETS = {
+  amber: '#cc8b3c',
+  green: '#34d399',
+  cyan: '#22d3ee',
+  violet: '#a78bfa',
+  rose: '#fb7185',
+};
+
 const COMMAND_CONTEXT = {
   '/add': 'adding a task or habit...',
   '/done': 'marking as done...',
@@ -472,21 +480,42 @@ function App() {
       const value = parts.slice(1).join(' ').trim();
 
       if (key === 'name') {
-        const nextConfig = { ...loadConfig(), name: value };
-        saveConfig(nextConfig);
-        setConfig(nextConfig);
-        triggerEcho(`Name set to ${value}.`, 'success');
+        if (!value) {
+          triggerEcho('Provide a name. Example: /settings name Datta', 'error');
+          return;
+        }
+        const updated = { ...loadConfig(), name: value };
+        saveConfig(updated);
+        setConfig(updated);
+        triggerEcho(`Name updated to ${value}.`, 'success');
         return;
       }
       if (key === 'theme') {
         if (!['dark', 'light'].includes(value)) {
-          triggerEcho('Theme must be dark or light.', 'error');
+          triggerEcho('Theme must be dark or light. Example: /settings theme dark', 'error');
           return;
         }
-        const nextConfig = { ...loadConfig(), theme: value };
-        saveConfig(nextConfig);
-        setConfig(nextConfig);
-        triggerEcho(`Theme set to ${value}. Restart to apply.`, 'success');
+        const updated = { ...loadConfig(), theme: value };
+        saveConfig(updated);
+        setConfig(updated);
+        triggerEcho(`Theme set to ${value}. Restart F.R.I.D.A.Y to apply.`, 'success');
+        return;
+      }
+      if (key === 'color') {
+        const preset = COLOR_PRESETS[value.toLowerCase()];
+        const hex = preset || value;
+        const isValidHex = /^#[0-9a-fA-F]{6}$/.test(hex);
+        if (!isValidHex) {
+          triggerEcho(
+            'Pick a preset (amber/green/cyan/violet/rose) or a hex like #ff6600',
+            'error'
+          );
+          return;
+        }
+        const updated = { ...loadConfig(), bannerColor: hex };
+        saveConfig(updated);
+        setConfig(updated);
+        triggerEcho(`Banner color set to ${hex}. Restart to apply.`, 'success');
         return;
       }
       triggerEcho(`Unknown setting: ${key}. Try name or theme.`, 'error');
@@ -540,6 +569,13 @@ function App() {
     if (showHelpPanel) {
       if (key.return || key.escape) {
         setShowHelpPanel(false);
+        return;
+      }
+    }
+
+    if (showSettingsPanel) {
+      if (key.return || key.escape) {
+        setShowSettingsPanel(false);
         return;
       }
     }
@@ -804,9 +840,25 @@ function App() {
       {showSettingsPanel ? (
         <Box flexDirection="column" borderStyle="single" borderColor={COLORS.dim} paddingX={1}>
           <Text color={COLORS.violet}>  ▸ SETTINGS</Text>
-          <Text color={COLORS.dim}>  name    <Text color={COLORS.bright}>{config.name}</Text></Text>
-          <Text color={COLORS.dim}>  theme   <Text color={COLORS.bright}>{config.theme}</Text></Text>
-          <Text color={COLORS.dim}>  → /settings name Datta  |  /settings theme dark</Text>
+          <Text color={COLORS.dim}>  {'─'.repeat(44)}</Text>
+          <Box>
+            <Text color={COLORS.dim}>  name        </Text>
+            <Text color={COLORS.bright}>{config.name}</Text>
+          </Box>
+          <Box>
+            <Text color={COLORS.dim}>  theme       </Text>
+            <Text color={COLORS.bright}>{config.theme}</Text>
+          </Box>
+          <Box>
+            <Text color={COLORS.dim}>  banner      </Text>
+            <Text color={COLORS.amber}>{config.bannerColor}</Text>
+          </Box>
+          <Text color={COLORS.dim}>  {'─'.repeat(44)}</Text>
+          <Text color={COLORS.dim}>  /settings name {'<value>'}</Text>
+          <Text color={COLORS.dim}>  /settings theme dark|light</Text>
+          <Text color={COLORS.dim}>  /settings color amber|green|cyan|violet|rose|#hex</Text>
+          <Text color={COLORS.dim}>  {'─'.repeat(44)}</Text>
+          <Text color={COLORS.dim}>  Press ENTER or ESC to close</Text>
         </Box>
       ) : null}
       <Text color={echoIsCommand ? COLORS.amber : echoColor}>→ {echoVisible ? (echo || ' ') : ' '}</Text>
@@ -868,9 +920,10 @@ function App() {
   );
 }
 
+const initialConfig = loadConfig();
 cfonts.say('FRIDAY', {
   font: 'block',
-  colors: ['#cc8b3c'],
+  colors: [initialConfig.bannerColor || '#cc8b3c'],
   background: 'transparent',
   letterSpacing: 1,
   lineHeight: 1,
