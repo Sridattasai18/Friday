@@ -8,9 +8,16 @@
 [![license](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 [![version](https://img.shields.io/badge/version-1.0.0-violet)](https://github.com/Sridattasai18/Friday/releases)
 
+---
+
 ## 🌐 Live on npm
+
+```bash
 npm install -g @sridattasai_v/friday
 friday
+```
+
+Data and config live in `~/.friday/` — never inside the project.
 
 ---
 
@@ -34,16 +41,6 @@ friday
 - **Banner:** [cfonts](https://github.com/dominikwilkowski/cfonts)
 - **Storage:** Local JSON via filesystem (~/.friday/)
 - **Build:** tsx
-
----
-
-## 📦 Installation
-npm install -g @sridattasai_v/friday
-
-Then just run:
-friday
-
-Data and config are stored at `~/.friday/` — never inside the project.
 
 ---
 
@@ -82,6 +79,8 @@ All changes apply **instantly** and persist to `~/.friday/config.json`.
 ---
 
 ## 📁 Project Structure
+
+```
 F.R.I.D.A.Y/
 ├── bin/
 │   └── friday.js          # Entry point — shebang + ESM dynamic import
@@ -94,30 +93,38 @@ F.R.I.D.A.Y/
 │   ├── personality.js     # getResponse() personality engine
 │   └── config.js          # Read/write ~/.friday/config.json
 └── package.json
+```
 
 ---
 
 ## 📸 Screenshots
 
 ### Greeting screen
+
 ![Greeting screen](./Greeting-Screen.png)
 
 ### Main dashboard
+
 ![Dashboard](./Main-dashboards.png)
 
 ### Command suggestions
+
 ![Command suggestions](./Command-suggestions.png)
 
 ### Exit screen
+
 ![Exit screen](./Exit-screen.png)
 
 ---
 
 ## 🚀 Local Development
+
+```bash
 git clone https://github.com/Sridattasai18/Friday
 cd Friday
 npm install
 npm start
+```
 
 ---
 
