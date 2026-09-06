@@ -1,7 +1,7 @@
 {
   "name": "@sridattasai_v/friday",
-  "version": "1.0.1",
-  "description": "F.R.I.D.A.Y — terminal productivity CLI. Tasks, habits, streaks.",
+  "version": "2.0.0",
+  "description": "F.R.I.D.A.Y — terminal productivity CLI with in-progress tracking, task filtering, and enhanced UI.",
   "type": "module",
   "bin": {
     "friday": "./bin/friday.js"
@@ -20,7 +20,12 @@
     "streak",
     "terminal",
     "ink",
-    "friday"
+    "friday",
+    "task-tracker",
+    "todo",
+    "habit-tracker",
+    "productivity-tool",
+    "terminal-ui"
   ],
   "author": "sridattasai_v",
   "license": "MIT",

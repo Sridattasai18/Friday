@@ -6,7 +6,7 @@
 [![npm](https://img.shields.io/npm/v/@sridattasai_v/friday?color=cc8b3c&label=npm)](https://www.npmjs.com/package/@sridattasai_v/friday)
 [![node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
 [![license](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
-[![version](https://img.shields.io/badge/version-1.0.0-violet)](https://github.com/Sridattasai18/Friday/releases)
+[![version](https://img.shields.io/badge/version-2.0.0-violet)](https://github.com/Sridattasai18/Friday/releases)
 
 ---
 
@@ -23,9 +23,13 @@ Data and config live in `~/.friday/` — never inside the project.
 
 ## ✨ Features
 
-- **Task + Habit Tracking** — add, complete, skip, delete from the terminal
+- **Task + Habit Tracking** — add, update, start, complete, skip, delete from the terminal
+- **In-Progress Status** — mark tasks as actively being worked on with `/start`
+- **Status Filtering** — filter by done, pending, in-progress, todo, or skipped
 - **14-day Dot Row** — visual habit history (▓ done · ▒ skipped · ░ missed)
 - **Streak Tracking** — per-habit streak counter with history log
+- **Relative Timestamps** — see when tasks were created/updated ("2h ago", "3d ago")
+- **Color-Coded UI** — TODO/DOING/DONE/SKIP labels with high-contrast icons
 - **Accent Color System** — entire UI palette derives from your chosen color
 - **Personality Engine** — dry / warm / casual greeting styles via getResponse()
 - **Interactive Settings** — arrow-key navigation, live preview, instant save
@@ -50,11 +54,13 @@ Data and config live in `~/.friday/` — never inside the project.
 |---|---|
 | `/add task <title>` | Add a task |
 | `/add habit <title>` | Add a recurring habit |
+| `/start <title>` | Mark as in-progress (working on it) |
 | `/done <title>` | Mark a task or habit done |
+| `/update <id> <new title>` | Edit a task or habit title |
 | `/skip <title>` | Skip a habit for today |
 | `/delete <title>` | Delete a task or habit |
+| `/list [status]` | Filter by status: done, pending, in-progress, todo, skipped |
 | `/streak` | Show habit streaks |
-| `/list` | Reload and display all tasks |
 | `/clear` | Remove completed tasks |
 | `/settings` | Open interactive settings panel |
 | `/features` | Open power commands panel |
@@ -99,21 +105,21 @@ F.R.I.D.A.Y/
 
 ## 📸 Screenshots
 
-### Greeting screen
+### Welcome screen
 
-![Greeting screen](./Greeting-Screen.png)
+![Welcome screen](./screenshots/welcomeScreen.png)
 
-### Main dashboard
+### Home - Tasks view
 
-![Dashboard](./Main-dashboards.png)
+![Home Tasks](./screenshots/homeTasksScreen.png)
 
-### Command suggestions
+### Settings panel
 
-![Command suggestions](./Command-suggestions.png)
+![Settings](./screenshots/settingsScreen.png)
 
-### Exit screen
+### Goodbye screen
 
-![Exit screen](./Exit-screen.png)
+![Goodbye screen](./screenshots/goodByeScreen.png)
 
 ---
 
@@ -130,9 +136,10 @@ npm start
 
 ## 🗺️ Roadmap
 
-- **v1** — task + habit manager with personality engine ✅ (current)
-- **v2** — smart suggestions based on your usage patterns
-- **v3** — local AI agent via Ollama, fully offline, no API costs
+- **v1** — task + habit manager with personality engine ✅
+- **v2** — in-progress status, task filtering, enhanced UI ✅ (current)
+- **v3** — smart suggestions based on your usage patterns
+- **v4** — local AI agent via Ollama, fully offline, no API costs
 
 ---
 
